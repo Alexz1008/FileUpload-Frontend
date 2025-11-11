@@ -114,16 +114,8 @@
 
         try
         {
-            var uploadUrl = Configuration["UPLOAD_URL"];
-            Logger.LogInformation("Upload URL from configuration: {UploadUrl}", uploadUrl ?? "null");
-
-            if (string.IsNullOrEmpty(uploadUrl))
-            {
-                Logger.LogError("Upload URL is not configured. UPLOAD_URL environment variable is missing or empty");
-                uploadMessage = "Upload URL is not configured. Please set the UPLOAD_URL environment variable.";
-                uploadSuccess = false;
-                return;
-            }
+            var uploadUrl = Configuration["UPLOAD_URL"] ?? "http://localhost:7151/api/UploadAndProcess";
+            Logger.LogInformation("Upload URL from configuration: {UploadUrl}", uploadUrl);
 
             using var content = new MultipartFormDataContent();
             Logger.LogInformation("Creating multipart form data content");
