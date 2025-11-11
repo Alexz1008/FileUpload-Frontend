@@ -1,5 +1,4 @@
-﻿Pages\Home.razor
-@page "/"
+﻿@page "/"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Forms
 @inject IConfiguration Configuration
@@ -118,7 +117,15 @@
             Logger.LogInformation("Upload URL from configuration: {UploadUrl}", uploadUrl);
 
             using var content = new MultipartFormDataContent();
-            Logger.LogInformation("Creating multipart form data content");
+            
+            // Explicitly set the boundary for the multipart content
+            var boundary = Guid.NewGuid().ToString("N");
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/form-data")
+            {
+                Parameters = { new System.Net.Http.Headers.NameValueHeaderValue("boundary", boundary) }
+            };
+            
+            Logger.LogInformation("Creating multipart form data content with boundary: {Boundary}", boundary);
 
             foreach (var file in selectedFiles)
             {
@@ -130,6 +137,9 @@
 
                 Logger.LogDebug("Added file to multipart content: {FileName}", file.Name);
             }
+
+            // Log the actual content-type being sent
+            Logger.LogInformation("Content-Type header: {ContentType}", content.Headers.ContentType?.ToString());
 
             Logger.LogInformation("Sending POST request to {UploadUrl}", uploadUrl);
             var response = await HttpClient.PostAsync(uploadUrl, content);
