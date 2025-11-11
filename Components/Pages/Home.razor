@@ -1,0 +1,160 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IConfiguration Configuration
+@inject HttpClient HttpClient
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Home</PageTitle>
+
+<h1>File Upload</h1>
+
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">Upload Files</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="this" OnValidSubmit="UploadFiles">
+                        <div class="mb-3">
+                            <label for="fileInput" class="form-label">Select Files</label>
+                            <InputFile id="fileInput" 
+                                       class="form-control" 
+                                       multiple 
+                                       OnChange="OnFileSelectionChanged" 
+                                       accept="*/*" />
+                            <div class="form-text">You can select multiple files at once.</div>
+                        </div>
+
+                        @if (selectedFiles.Any())
+                        {
+                            <div class="mb-3">
+                                <h5>Selected Files:</h5>
+                                <ul class="list-group">
+                                    @foreach (var file in selectedFiles)
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <span>@file.Name</span>
+                                            <span class="badge bg-secondary rounded-pill">@FormatFileSize(file.Size)</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <div class="mb-3">
+                            <button type="submit" 
+                                    class="btn btn-primary" 
+                                    disabled="@(!selectedFiles.Any() || isUploading)">
+                                @if (isUploading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    <span>Uploading...</span>
+                                }
+                                else
+                                {
+                                    <span>Upload Files</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    @if (!string.IsNullOrEmpty(uploadMessage))
+                    {
+                        <div class="alert @(uploadSuccess ? "alert-success" : "alert-danger")" role="alert">
+                            @uploadMessage
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<IBrowserFile> selectedFiles = new();
+    private bool isUploading = false;
+    private string uploadMessage = string.Empty;
+    private bool uploadSuccess = false;
+    private const int maxFileSize = 10 * 1024 * 1024; // 10MB per file
+
+    private void OnFileSelectionChanged(InputFileChangeEventArgs e)
+    {
+        selectedFiles.Clear();
+        selectedFiles.AddRange(e.GetMultipleFiles());
+        uploadMessage = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!selectedFiles.Any())
+            return;
+
+        isUploading = true;
+        uploadMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var uploadUrl = Configuration["UPLOAD_URL"];
+            
+            if (string.IsNullOrEmpty(uploadUrl))
+            {
+                uploadMessage = "Upload URL is not configured. Please set the UPLOAD_URL environment variable.";
+                uploadSuccess = false;
+                return;
+            }
+
+            using var content = new MultipartFormDataContent();
+
+            foreach (var file in selectedFiles)
+            {
+                var fileContent = new StreamContent(file.OpenReadStream(maxFileSize));
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType ?? "application/octet-stream");
+                content.Add(fileContent, "files", file.Name);
+            }
+
+            var response = await HttpClient.PostAsync(uploadUrl, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                uploadMessage = $"Successfully uploaded {selectedFiles.Count} file(s).";
+                uploadSuccess = true;
+                selectedFiles.Clear();
+            }
+            else
+            {
+                uploadMessage = $"Upload failed with status: {response.StatusCode}. {response.ReasonPhrase}";
+                uploadSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            uploadMessage = $"Upload failed: {ex.Message}";
+            uploadSuccess = false;
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        const int scale = 1024;
+        string[] orders = { "GB", "MB", "KB", "Bytes" };
+        long max = (long)Math.Pow(scale, orders.Length - 1);
+
+        foreach (string order in orders)
+        {
+            if (bytes > max)
+                return $"{decimal.Divide(bytes, max):##.##} {order}";
+
+            max /= scale;
+        }
+        return "0 Bytes";
+    }
+}
