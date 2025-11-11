@@ -1,9 +1,11 @@
-﻿@page "/"
+﻿Pages\Home.razor
+@page "/"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Forms
 @inject IConfiguration Configuration
 @inject HttpClient HttpClient
 @inject IJSRuntime JSRuntime
+@inject ILogger<Home> Logger
 
 <PageTitle>Home</PageTitle>
 
@@ -20,10 +22,10 @@
                     <EditForm Model="this" OnValidSubmit="UploadFiles">
                         <div class="mb-3">
                             <label for="fileInput" class="form-label">Select Files</label>
-                            <InputFile id="fileInput" 
-                                       class="form-control" 
-                                       multiple 
-                                       OnChange="OnFileSelectionChanged" 
+                            <InputFile id="fileInput"
+                                       class="form-control"
+                                       multiple
+                                       OnChange="OnFileSelectionChanged"
                                        accept="*/*" />
                             <div class="form-text">You can select multiple files at once.</div>
                         </div>
@@ -45,8 +47,8 @@
                         }
 
                         <div class="mb-3">
-                            <button type="submit" 
-                                    class="btn btn-primary" 
+                            <button type="submit"
+                                    class="btn btn-primary"
                                     disabled="@(!selectedFiles.Any() || isUploading)">
                                 @if (isUploading)
                                 {
@@ -85,13 +87,26 @@
         selectedFiles.Clear();
         selectedFiles.AddRange(e.GetMultipleFiles());
         uploadMessage = string.Empty;
+        Logger.LogInformation("Files selected: {FileCount} files", selectedFiles.Count);
+
+        foreach (var file in selectedFiles)
+        {
+            Logger.LogDebug("Selected file: {FileName}, Size: {FileSize} bytes, ContentType: {ContentType}",
+                file.Name, file.Size, file.ContentType);
+        }
+
         StateHasChanged();
     }
 
     private async Task UploadFiles()
     {
+        Logger.LogInformation("Starting file upload process. File count: {FileCount}", selectedFiles.Count);
+
         if (!selectedFiles.Any())
+        {
+            Logger.LogWarning("Upload attempted with no files selected");
             return;
+        }
 
         isUploading = true;
         uploadMessage = string.Empty;
@@ -100,45 +115,67 @@
         try
         {
             var uploadUrl = Configuration["UPLOAD_URL"];
-            
+            Logger.LogInformation("Upload URL from configuration: {UploadUrl}", uploadUrl ?? "null");
+
             if (string.IsNullOrEmpty(uploadUrl))
             {
+                Logger.LogError("Upload URL is not configured. UPLOAD_URL environment variable is missing or empty");
                 uploadMessage = "Upload URL is not configured. Please set the UPLOAD_URL environment variable.";
                 uploadSuccess = false;
                 return;
             }
 
             using var content = new MultipartFormDataContent();
+            Logger.LogInformation("Creating multipart form data content");
 
             foreach (var file in selectedFiles)
             {
+                Logger.LogDebug("Processing file for upload: {FileName}, Size: {FileSize}", file.Name, file.Size);
+
                 var fileContent = new StreamContent(file.OpenReadStream(maxFileSize));
                 fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType ?? "application/octet-stream");
                 content.Add(fileContent, "files", file.Name);
+
+                Logger.LogDebug("Added file to multipart content: {FileName}", file.Name);
             }
 
+            Logger.LogInformation("Sending POST request to {UploadUrl}", uploadUrl);
             var response = await HttpClient.PostAsync(uploadUrl, content);
+
+            Logger.LogInformation("Received response: StatusCode={StatusCode}, ReasonPhrase={ReasonPhrase}",
+                response.StatusCode, response.ReasonPhrase);
 
             if (response.IsSuccessStatusCode)
             {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                Logger.LogInformation("Upload successful. Response content: {ResponseContent}", responseContent);
+
                 uploadMessage = $"Successfully uploaded {selectedFiles.Count} file(s).";
                 uploadSuccess = true;
                 selectedFiles.Clear();
             }
             else
             {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                Logger.LogError("Upload failed. StatusCode: {StatusCode}, ReasonPhrase: {ReasonPhrase}, ErrorContent: {ErrorContent}",
+                    response.StatusCode, response.ReasonPhrase, errorContent);
+
                 uploadMessage = $"Upload failed with status: {response.StatusCode}. {response.ReasonPhrase}";
                 uploadSuccess = false;
             }
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Exception occurred during file upload. Exception type: {ExceptionType}, Message: {ExceptionMessage}",
+                ex.GetType().Name, ex.Message);
+
             uploadMessage = $"Upload failed: {ex.Message}";
             uploadSuccess = false;
         }
         finally
         {
             isUploading = false;
+            Logger.LogInformation("File upload process completed. Success: {UploadSuccess}", uploadSuccess);
             StateHasChanged();
         }
     }
