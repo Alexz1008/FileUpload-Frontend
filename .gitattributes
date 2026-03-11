@@ -3,6 +3,8 @@
 ###############################################################################
 * text=auto
 
+.github/workflows/*.lock.yml linguist-generated=true merge=ours
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
